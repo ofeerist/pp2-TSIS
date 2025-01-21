@@ -1,0 +1,7 @@
+print(15 - 10)
+print(15 // 10)
+print(15 ** 2)
+print(0 and "0")
+print(0 is not "0")
+print("0" in "102")
+print(12 << 2)

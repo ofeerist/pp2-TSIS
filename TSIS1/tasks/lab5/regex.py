@@ -37,6 +37,6 @@ cas = "CamelCaseExample"
 # x = re.sub("^[ ]", "", x) # x.strip()
 
 # 10
-x = re.sub("(?<!^)(?=[A-Z])", "_", cas) # (?<!^) - negative look behind
+# x = re.sub("(?<!^)(?=[A-Z])", "_", cas) # (?<!^) - negative look behind
 
 print(x)

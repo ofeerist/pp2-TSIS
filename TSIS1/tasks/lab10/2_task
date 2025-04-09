@@ -1,0 +1,239 @@
+import pygame
+import time
+import random
+import psycopg2
+
+# Window size
+window_x = 1000
+window_y = 500
+
+# defining colors
+black = pygame.Color(0, 0, 0)
+white = pygame.Color(255, 255, 255)
+red = pygame.Color(255, 0, 0)
+green = pygame.Color(0, 255, 0)
+blue = pygame.Color(0, 0, 255)
+
+# Initialising pygame
+pygame.init()
+
+# Initialise game window
+pygame.display.set_caption('Snake Game with User Scores')
+game_window = pygame.display.set_mode((window_x, window_y))
+
+# FPS (frames per second) controller
+fps = pygame.time.Clock()
+
+# Database connection
+def connect_db():
+    conn = psycopg2.connect(
+        dbname="postgres",  
+        user="postgres",       
+        password="password",  
+        host="localhost",  
+        port="5432"
+    )
+    return conn
+
+
+# Create tables if they don't exist
+def create_tables():
+    conn = connect_db()
+    cur = conn.cursor()
+    
+    # Create user table if it doesn't exist
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS player (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) NOT NULL UNIQUE
+    );
+    """)
+    
+    # Create user_score table if it doesn't exist
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_score (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES player(id),
+        score INTEGER,
+        level INTEGER,
+        date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# Displaying Score function
+def show_level(choice, color, font, size, level):
+    level_font = pygame.font.SysFont(font, size)
+    level_surface = level_font.render(f'Level : {level}', True, color)
+    game_window.blit(level_surface, (window_x-150, 0))
+
+# Displaying Score function
+def show_score(choice, color, font, size, score):
+    score_font = pygame.font.SysFont(font, size)
+    score_surface = score_font.render(f'Score : {score}', True, color)
+    score_rect = score_surface.get_rect()
+    game_window.blit(score_surface, score_rect)
+
+# Game over function
+def game_over(score, level, user_id):
+    my_font = pygame.font.SysFont('times new roman', 50)
+    game_over_surface = my_font.render(f'Game Over! Your Score: {score}', True, red)
+    game_over_rect = game_over_surface.get_rect()
+    game_over_rect.center = (window_x / 2, window_y / 4)
+    game_window.blit(game_over_surface, game_over_rect)
+    pygame.display.flip()
+    time.sleep(2)
+    save_score(score, level, user_id)
+    pygame.quit()
+    quit()
+
+# Save score to database
+def save_score(score, level, user_id):
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO user_score (user_id, score, level) VALUES (%s, %s, %s)", 
+                (user_id, score, level))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# Generate fruit position
+def generate_fruit_position():
+    new_position = [random.randrange(1, (window_x//10)) * 10, 
+                    random.randrange(1, (window_y//10)) * 10]
+    return new_position
+
+# User login or create new user
+def user_login():
+    username = input("Enter your username: ")
+    conn = connect_db()
+    cur = conn.cursor()
+    
+    # Check if user exists
+    cur.execute("SELECT * FROM player WHERE username = %s", (username,))
+    user = cur.fetchone()
+    
+    if not user:
+        # If user does not exist, create new user
+        cur.execute("INSERT INTO player (username) VALUES (%s) RETURNING id", (username,))
+        user_id = cur.fetchone()[0]
+        print(f"New user {username} created.")
+    else:
+        user_id = user[0]
+        print(f"Welcome back {username}!")
+
+    conn.commit()
+
+    # Load the last score and level from the database
+    cur.execute("""
+        SELECT score, level FROM user_score 
+        WHERE user_id = %s 
+        ORDER BY date DESC LIMIT 1
+    """, (user_id,))
+    user_score_data = cur.fetchone()
+    
+    if user_score_data:
+        last_score, last_level = user_score_data
+    else:
+        last_score, last_level = 0, 1  # If no score, default to 0 score and level 1
+    
+    print(f"Your last score: {last_score}, Last level: {last_level}")
+
+    cur.close()
+    conn.close()
+    return user_id, last_score, last_level
+
+# Main function
+def main():
+    create_tables()
+    user_id, score, level = user_login()  # Ask user for login or creation
+    snake_speed = 10
+    fruits_eaten = 0
+
+    # Initial snake position and body
+    snake_position = [100, 50]
+    snake_body = [[100, 50], [90, 50], [80, 50], [70, 50]]
+    direction = 'RIGHT'
+    change_to = direction
+    fruit_position = generate_fruit_position()
+    fruit_spawn = True
+
+    while True:
+        game_window.fill(black)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                game_over(score, level, user_id)
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP:
+                    change_to = 'UP'
+                if event.key == pygame.K_DOWN:
+                    change_to = 'DOWN'
+                if event.key == pygame.K_LEFT:
+                    change_to = 'LEFT'
+                if event.key == pygame.K_RIGHT:
+                    change_to = 'RIGHT'
+                if event.key == pygame.K_p:  # Pause the game
+                    pygame.time.wait(2000)
+
+        if change_to == 'UP' and direction != 'DOWN':
+            direction = 'UP'
+        if change_to == 'DOWN' and direction != 'UP':
+            direction = 'DOWN'
+        if change_to == 'LEFT' and direction != 'RIGHT':
+            direction = 'LEFT'
+        if change_to == 'RIGHT' and direction != 'LEFT':
+            direction = 'RIGHT'
+
+        if direction == 'UP':
+            snake_position[1] -= 10
+        if direction == 'DOWN':
+            snake_position[1] += 10
+        if direction == 'LEFT':
+            snake_position[0] -= 10
+        if direction == 'RIGHT':
+            snake_position[0] += 10
+
+        snake_body.insert(0, list(snake_position))
+        if snake_position[0] == fruit_position[0] and snake_position[1] == fruit_position[1]:
+            score += 10 * level
+            fruits_eaten += 1
+            fruit_spawn = False
+        else:
+            snake_body.pop()
+
+        if not fruit_spawn and fruits_eaten % 3 == 0:
+            level += 1
+            snake_speed = 10 * level
+            fruit_weight = 2
+
+
+        if not fruit_spawn:
+            fruit_position = generate_fruit_position()
+
+        fruit_spawn = True
+
+        # Draw snake and fruit
+        for pos in snake_body:
+            pygame.draw.rect(game_window, green, pygame.Rect(pos[0], pos[1], 10, 10))
+
+        pygame.draw.rect(game_window, red, pygame.Rect(fruit_position[0], fruit_position[1], 10, 10))
+
+        # Check for collisions
+        if snake_position[0] < 0 or snake_position[0] > window_x - 10 or snake_position[1] < 0 or snake_position[1] > window_y - 10:
+            game_over(score, level, user_id)
+        for block in snake_body[1:]:
+            if snake_position[0] == block[0] and snake_position[1] == block[1]:
+                game_over(score, level, user_id)
+
+        # Show score and level
+        show_score(1, blue, 'times new roman', 35, score)
+        show_level(1, blue, 'times new roman', 35, level)
+
+        pygame.display.update()
+        fps.tick(snake_speed)
+
+if __name__ == "__main__":
+    main()
